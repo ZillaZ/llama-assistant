@@ -5,6 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::sync::Arc;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 use tokio::{
     io::AsyncReadExt,
@@ -21,7 +22,7 @@ pub struct Usage {
     pub total_tokens: i32,
     pub prompt_time: f32,
     pub completion_time: f32,
-    pub total_time: f32
+    pub total_time: f32,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -29,7 +30,7 @@ pub struct Choice {
     pub index: i32,
     pub message: ApiMessage,
     pub finish_reason: String,
-    pub logprobs: Option<String>
+    pub logprobs: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -40,19 +41,26 @@ pub struct ApiResponse {
     pub model: String,
     pub system_configuration: Option<String>,
     pub choices: Vec<Choice>,
-    pub usage: Usage
+    pub usage: Usage,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct Messages {
     pub messages: Vec<ApiMessage>,
-    pub model: String
+    pub model: String,
 }
 
 impl Display for Messages {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let messages = self.messages.iter().map(|x| serde_json::to_string_pretty(x).unwrap()).collect::<Vec<_>>();
-        let messages = messages.into_iter().reduce(|acc, elem| format!("{},{}", acc, elem)).unwrap();
+        let messages = self
+            .messages
+            .iter()
+            .map(|x| serde_json::to_string_pretty(x).unwrap())
+            .collect::<Vec<_>>();
+        let messages = messages
+            .into_iter()
+            .reduce(|acc, elem| format!("{},{}", acc, elem))
+            .unwrap();
         let format = format!("{{messages: [{}]}}", messages);
         f.write_str(&format)
     }
@@ -70,11 +78,11 @@ impl ApiMessage {
             "user" => Entity::User,
             "system" => Entity::System,
             "assistant" => Entity::Assistant,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         Message {
             role,
-            content: self.content.clone()
+            content: self.content.clone(),
         }
     }
 }
@@ -88,14 +96,18 @@ pub struct Wrapper {
 pub struct AssistantClient {
     environment: Environment,
     client: Client,
+    headers: HeaderMap,
 }
 
 impl AssistantClient {
     pub fn new() -> Self {
-        Self {
+        let mut rtn = Self {
             environment: Environment::new(),
             client: Client::new(),
-        }
+            headers: HeaderMap::new(),
+        };
+        rtn.setup_headers();
+        rtn
     }
 
     pub async fn read_input(
@@ -104,44 +116,73 @@ impl AssistantClient {
         sender: Sender<(String, Message)>,
         mut receiver: Receiver<Arc<Mutex<Context>>>,
     ) {
-        let mut buffer = [0; 1024];
+        let mut buffer = [0; 50000];
         while let Ok(bytes) = stream.read(&mut buffer).await {
-            if bytes < 1 {
+            if bytes == 0 {
                 continue;
             }
             let buffer = &buffer[0..bytes];
-            println!("{}", String::from_utf8(buffer.to_vec()).unwrap());
             let message = serde_json::from_slice::<Wrapper>(buffer).unwrap();
             sender
                 .send((message.conversation_id.clone(), message.message.clone()))
                 .unwrap();
             let context = receiver.recv().await.unwrap();
-            let api_key = self.environment.get_key();
-            let mut headers = HeaderMap::new();
-            headers.insert(AUTHORIZATION, format!("Bearer {}", api_key).parse().unwrap());
-            headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-            let mut messages = Vec::new();
-            for message in context.lock().await.get_messages(&message.conversation_id) {
-                messages.push(ApiMessage{
-                    role: message.role.to_string(),
-                    content: message.content.clone(),
-                });
-            }
-            let messages = Messages {
-                messages,
-                model: self.environment.get_model()
-            };
-            println!("{}", serde_json::to_string(&messages).unwrap());
-            let response = self.client.post("https://api.groq.com/openai/v1/chat/completions")
-                                      .headers(headers)
-                                      .json(&messages)
-                                      .send()
-                                      .await
-                                      .unwrap();
-            println!("response received");
-            let response = response.json::<ApiResponse>().await.unwrap();
-            println!("{}", response.choices[0].message.content);
-            context.lock().await.new_message(message.conversation_id, response.choices[0].message.to_message());
+            let messages = self.build_messages(&message, &context).await;
+            let answer = self.make_request(&mut stream, &messages).await;
+            context
+                .lock()
+                .await
+                .new_message(message.conversation_id, answer);
         }
+    }
+
+    /*
+     *
+     */
+
+    async fn make_request(&self, stream: &mut TcpStream, messages: &Messages) -> Message {
+        let response = self
+            .client
+            .post("https://api.groq.com/openai/v1/chat/completions")
+            .headers(self.headers.clone())
+            .json(&messages)
+            .send()
+            .await
+            .unwrap();
+
+        let response = response.json::<ApiResponse>().await.unwrap();
+        stream
+            .write(response.choices[0].message.content.as_bytes())
+            .await
+            .unwrap();
+        response.choices[0].message.to_message()
+    }
+
+    fn setup_headers(&mut self) {
+        let api_key = self.environment.get_key();
+        self.headers.insert(
+            AUTHORIZATION,
+            format!("Bearer {}", api_key).parse().unwrap(),
+        );
+        self.headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
+    }
+
+    async fn build_messages(&self, message: &Wrapper, context: &Arc<Mutex<Context>>) -> Messages {
+        let messages = context
+            .lock()
+            .await
+            .get_messages(&message.conversation_id)
+            .iter()
+            .map(|message| ApiMessage {
+                role: message.role.to_string(),
+                content: message.content.clone(),
+            })
+            .collect::<Vec<ApiMessage>>();
+
+        let messages = Messages {
+            messages,
+            model: self.environment.get_model(),
+        };
+        messages
     }
 }

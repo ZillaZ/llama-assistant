@@ -45,23 +45,29 @@ impl Server {
             sender,
         )
     }
-
-    pub async fn serve(&mut self) {
+    async fn pull_from_channel_transfer(&mut self) {
         while !self.channel_transfer.is_empty() {
             let (id, sender, receiver) = self.channel_transfer.recv().await.unwrap();
             self.senders.insert(id.clone(), sender);
             self.receivers.insert(id.clone(), receiver);
         }
+    }
+
+    async fn process_receivers(&mut self) {
         for (id, receiver) in self.receivers.iter_mut() {
             let sender = self.senders.get(id).unwrap();
             while !receiver.is_empty() {
-                println!("processing message from {}", id);
                 let (conversation_id, message) = receiver.recv().await.unwrap();
                 let mut lock = self.contexts.lock().await;
                 lock.new_message(conversation_id, message);
                 sender.send(self.contexts.clone()).unwrap();
             }
         }
+    }
+
+    pub async fn serve(&mut self) {
+        self.pull_from_channel_transfer().await;
+        self.process_receivers().await;
     }
 }
 

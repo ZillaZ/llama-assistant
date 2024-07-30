@@ -3,7 +3,7 @@ use std::env;
 
 pub struct Environment {
     api_key: String,
-    ai_model: String
+    ai_model: String,
 }
 
 impl Environment {

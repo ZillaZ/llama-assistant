@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-
 pub mod modules;
 
 #[tokio::main]

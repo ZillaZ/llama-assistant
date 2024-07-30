@@ -15,7 +15,7 @@ impl Display for Entity {
         let repr = match *self {
             Self::User => "user",
             Self::Assistant => "assistant",
-            Self::System => "system"
+            Self::System => "system",
         };
         f.write_str(repr)
     }
@@ -30,7 +30,7 @@ pub struct Message {
 #[derive(Debug)]
 pub struct Context {
     messages: HashMap<String, Vec<Message>>,
-    connection: Client
+    connection: Client,
 }
 
 impl Context {
@@ -38,7 +38,7 @@ impl Context {
         let connection = db_connect().await;
         Self {
             messages: HashMap::new(),
-            connection
+            connection,
         }
     }
 
@@ -50,12 +50,14 @@ impl Context {
     pub fn get_messages(&self, id: &String) -> Vec<Message> {
         self.messages.get(id).unwrap().to_vec()
     }
-
 }
 pub async fn db_connect() -> Client {
-    let (client, connection) = connect("dbname=context hostaddr=0.0.0.0 port=5433 user=postgres password=postgres", NoTls)
-        .await
-        .unwrap();
+    let (client, connection) = connect(
+        "dbname=context hostaddr=0.0.0.0 port=5433 user=postgres password=postgres",
+        NoTls,
+    )
+    .await
+    .unwrap();
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);

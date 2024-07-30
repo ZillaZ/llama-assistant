@@ -1,1 +1,77 @@
-{"conversation_id": "peniskkk", "message": {"role": "User", "content": "Estou focando em todos esses pontos, mas o principal é geração de código. Quero coisas como analisar um buffer que tem um JSON e através de um simples comando ser capaz de fazer um pedido para traduzir esse arquivo JSON em uma Struct de Rust. No momento estou fazendo um servidor que roda localmente e escuta requisições TCP IP. Dessa forma, posso usar o mesmo servidor para qualquer outra aplicação no meu desktop (como o Emacs e o Nushell)"}}
+use serde::{Serialize, Deserialize};
+use std::fmt;
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct ChatCompletionRoot {
+    #[serde(rename = "id")]
+    id: String,
+    #[serde(rename = "object")]
+    object: String,
+    created: i64,
+    #[serde(rename = "model")]
+    model: String,
+    #[serde(rename = "system_fingerprint")]
+    system_fingerprint: Option<String>,
+    choices: Vec<Choice>,
+    usage: Usage,
+}
+
+impl fmt::Display for ChatCompletionRoot {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "id: {}, object: {}, created: {}, model: {}, system_fingerprint: {:?}, choices: {:?}, usage: {:?}",
+            self.id, self.object, self.created, self.model, self.system_fingerprint, self.choices, self.usage)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct Choice {
+    #[serde(rename = "index")]
+    index: u8,
+    message: Message,
+    #[serde(rename = "finish_reason")]
+    finish_reason: String,
+    #[serde(default)]
+    logprobs: Option<String>,
+}
+
+impl fmt::Display for Choice {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "index: {}, message: {:?}, finish_reason: {}, logprobs: {:?}",
+            self.index, self.message, self.finish_reason, self.logprobs)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct Message {
+    role: String,
+    content: String,
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "role: {}, content: {}", self.role, self.content)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+struct Usage {
+    #[serde(rename = "prompt_tokens")]
+    prompt_tokens: u64,
+    #[serde(rename = "completion_tokens")]
+    completion_tokens: u64,
+    #[serde(rename = "total_tokens")]
+    total_tokens: u64,
+    #[serde(rename = "prompt_time")]
+    prompt_time: f64,
+    #[serde(rename = "completion_time")]
+    completion_time: f64,
+    #[serde(rename = "total_time")]
+    total_time: f64,
+}
+
+impl fmt::Display for Usage {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "prompt_tokens: {}, completion_tokens: {}, total_tokens: {}, prompt_time: {:.3}, completion_time: {:.3}, total_time: {:.3}",
+            self.prompt_tokens, self.completion_tokens, self.total_tokens, self.prompt_time, self.completion_time, self.total_time)
+    }
+}
