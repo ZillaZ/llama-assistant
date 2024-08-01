@@ -116,8 +116,8 @@ impl AssistantClient {
         sender: Sender<(String, Message)>,
         mut receiver: Receiver<Arc<Mutex<Context>>>,
     ) {
-        let mut buffer = [0; 50000];
-        while let Ok(bytes) = stream.read(&mut buffer).await {
+        let mut buffer = Vec::new();
+        while let Ok(bytes) = stream.read_to_end(&mut buffer).await {
             if bytes == 0 {
                 continue;
             }

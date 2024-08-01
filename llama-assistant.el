@@ -28,7 +28,7 @@
      (lambda (proc string)
        (with-current-buffer (process-buffer proc)
          (goto-char (point))
-         (insert string))))
+         (insert (concat "/*" string "*/")))))
     (process-send-string process message)
     (process-send-eof process)
     buffer))
